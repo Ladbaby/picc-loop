@@ -979,10 +979,6 @@ Recurring tasks auto-expire after ${DEFAULT_MAX_AGE_DAYS} days — they fire one
 Returns a job ID you can pass to ${TOOL_CRON_DELETE}.`;
 }
 
-function buildCronListPrompt(): string {
-	return `List all cron jobs scheduled via ${TOOL_CRON_CREATE} for this project — durable jobs (loaded from \`<cwd>/.pi/scheduled_tasks.json\`) plus any session-only jobs added this session.`;
-}
-
 const CRON_DELETE_DESCRIPTION = "Cancel a cron job previously scheduled with CronCreate. Removes it from .pi/scheduled_tasks.json (durable jobs) or the in-memory session store (session-only jobs).";
 const CRON_LIST_DESCRIPTION = "List all cron jobs scheduled via CronCreate, both durable (.pi/scheduled_tasks.json) and session-only.";
 
@@ -1242,7 +1238,7 @@ export default function (pi: ExtensionAPI) {
                 Type.Boolean({
                     default: false,
                     description:
-                        "true = persist to .claude/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this Claude session ends. Use true only when the user asks the task to survive across sessions.",
+                        "true = persist to .pi/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this Pi session ends. Use true only when the user asks the task to survive across sessions.",
                 }),
             ),
 			prompt: Type.String({
@@ -1251,7 +1247,7 @@ export default function (pi: ExtensionAPI) {
 			recurring: Type.Optional(
 				Type.Boolean({
 					default: true,
-					description: `true (default) = fire on every cron match until deleted or auto-expired after 7 days. false = fire once at the next match, then auto-delete. Use false for \"remind me at X\" one-shot requests with pinned minute/hour/dom/month.`,
+					description: `true (default) = fire on every cron match until deleted or auto-expired after ${DEFAULT_MAX_AGE_DAYS} days. false = fire once at the next match, then auto-delete. Use false for \"remind me at X\" one-shot requests with pinned minute/hour/dom/month.`,
 				}),
 			),
 		}),
@@ -1275,7 +1271,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const recurring = params.recurring ?? true;
-			const durable = params.durable ?? true;
+			const durable = params.durable ?? false;
 			const now = Date.now();
 
 			const id = generateId();
