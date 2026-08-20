@@ -1,5 +1,5 @@
 /**
- * pi-loop (local fork) — CronCreate / CronDelete / CronList + /loop slash command.
+ * picc-loop — CronCreate / CronDelete / CronList + /loop slash command.
  *
  * Replaces npm:@trevonistrevon/pi-loop with a focused single-file extension
  * that matches Anthropic's Claude Code `/loop` cron design.
@@ -373,7 +373,7 @@ type PersistedFile = {
 // unavailable).
 let stateFile: string | null = null;
 
-// Per-session debug log file. Used to record pi-loop lifecycle events to
+// Per-session debug log file. Used to record picc-loop lifecycle events to
 // disk, independent of stderr, so the user can `tail` / `cat` it to verify
 // that the cron scheduler is actually running even if stderr is being
 // suppressed or routed somewhere by the TUI / extension runner. The file
@@ -521,15 +521,14 @@ function startTickLoop(): void {
 	// the schedule. The 1Hz tick is negligible in CPU; the keep-alive cost
 	// is acceptable for the guarantee it provides.
 	tickTimer = setInterval(tickJobs, TICK_INTERVAL_MS);
-	// console.error(`[pi-loop] tick loop started (every ${TICK_INTERVAL_MS}ms, NOT unref'd).`);
-	debugLog(`tick loop started (every ${TICK_INTERVAL_MS}ms, NOT unref'd)`);
+	// debugLog(`tick loop started (every ${TICK_INTERVAL_MS}ms, NOT unref'd)`);
 }
 
 function stopTickLoop(): void {
 	if (!tickTimer) return;
 	clearInterval(tickTimer);
 	tickTimer = null;
-	debugLog(`tick loop stopped`);
+	// debugLog(`tick loop stopped`);
 }
 
 function tickJobs(): void {
@@ -544,7 +543,7 @@ function tickJobs(): void {
 		if (job.nextRun <= now) {
 			// Fire. Re-compute nextRun after the fire so the next interval
 			// has an accurate target.
-			debugLog(`tick: due ${job.id} (cron=${job.cron}, nextRun=${new Date(job.nextRun).toISOString()})`);
+			// debugLog(`tick: due ${job.id} (cron=${job.cron}, nextRun=${new Date(job.nextRun).toISOString()})`);
 			onFire(job);
 		}
 	}
@@ -561,40 +560,27 @@ function scheduleTimer(job: CronJob): void {
 	const anchorIso = new Date(job.lastFiredAt ?? job.createdAt).toISOString();
 	const next = computeNextRunForJob(job);
 	if (!next) {
-		// console.error(
-		// 	`[pi-loop] scheduleTimer(${job.id}): gave up; no valid next fire from anchor ${anchorIso} or now.`,
-		// );
-		debugLog(`scheduleTimer(${job.id}): gave up; no valid next fire from anchor ${anchorIso}`);
+		// debugLog(`scheduleTimer(${job.id}): gave up; no valid next fire from anchor ${anchorIso}`);
 		job.nextRun = undefined;
 		return;
 	}
 	const delayMs = Math.max(0, next - Date.now());
 	job.nextRun = next;
-	// console.error(
-	// 	`[pi-loop] scheduleTimer(${job.id}): armed next fire at ${new Date(next).toISOString()} ` +
-	// 	`(in ${delayMs}ms, anchor=${anchorIso}, cron=${job.cron}).`,
-	// );
-	debugLog(`scheduleTimer(${job.id}): armed next fire at ${new Date(next).toISOString()} (in ${delayMs}ms, cron=${job.cron})`);
+	// debugLog(`scheduleTimer(${job.id}): armed next fire at ${new Date(next).toISOString()} (in ${delayMs}ms, cron=${job.cron})`);
 }
 
 function onFire(job: CronJob): void {
 	if (!jobs.has(job.id)) {
-		// console.error(`[pi-loop] onFire(${job.id}): job not in map; skipping.`);
-		debugLog(`onFire(${job.id}): job not in map; skipping`);
+		// debugLog(`onFire(${job.id}): job not in map; skipping`);
 		return;
 	}
 
 	job.fireAttempts = (job.fireAttempts ?? 0) + 1;
 	const now = Date.now();
 
-	// console.error(
-	// 	`[pi-loop] FIRE attempt #${job.fireAttempts} for ${job.id} (${job.cron}); ` +
-	// 	`isLeader=${isLeader}, hasCurrentPi=${!!currentPi}, ` +
-	// 	`recurring=${job.recurring}, lastFiredAt=${job.lastFiredAt ? new Date(job.lastFiredAt).toISOString() : "never"}`,
+	// debugLog(
+	// 	`FIRE attempt #${job.fireAttempts} for ${job.id} (${job.cron}); isLeader=${isLeader}, hasCurrentPi=${!!currentPi}, recurring=${job.recurring}, lastFiredAt=${job.lastFiredAt ? new Date(job.lastFiredAt).toISOString() : "never"}`,
 	// );
-	debugLog(
-		`FIRE attempt #${job.fireAttempts} for ${job.id} (${job.cron}); isLeader=${isLeader}, hasCurrentPi=${!!currentPi}, recurring=${job.recurring}, lastFiredAt=${job.lastFiredAt ? new Date(job.lastFiredAt).toISOString() : "never"}`,
-	);
 
 	// 7-day auto-expiry for recurring jobs. Computed from createdAt at fire
 	// time (not stored on disk), matching Claude Code's `isRecurringTaskAged`
@@ -606,7 +592,7 @@ function onFire(job: CronJob): void {
 		try {
 			currentPi?.sendMessage(
 				{
-					customType: "pi-loop-notice",
+					customType: "picc-loop-notice",
 					content: `Recurring job ${job.id} auto-expired after ${DEFAULT_MAX_AGE_DAYS} days and was deleted.`,
 					display: false,
 				},
@@ -627,7 +613,7 @@ function onFire(job: CronJob): void {
 		const nowMs = Date.now();
 		if (lastBusyLogTime === null || nowMs - lastBusyLogTime > BUSY_LOG_THROTTLE_MS) {
 			lastBusyLogTime = nowMs;
-			debugLog(`FIRE attempt #${job.fireAttempts} for ${job.id}: agent busy; deferring ${BUSY_RETRY_INTERVAL_MS}ms`);
+			// debugLog(`FIRE attempt #${job.fireAttempts} for ${job.id}: agent busy; deferring ${BUSY_RETRY_INTERVAL_MS}ms`);
 		}
 		return;
 	}
@@ -649,13 +635,9 @@ function onFire(job: CronJob): void {
 	// `lastFiredAt` is only advanced on successful delivery — a failed fire
 	// should not reset the anchor and shift the entire schedule forward.
 	if (!delivered) {
-		// console.error(
-		// 	`[pi-loop] FIRE attempt #${job.fireAttempts} for ${job.id} FAILED to deliver ` +
-		// 	`(lastDeliveryResult=${job.lastDeliveryResult}); will re-arm in place, lastFiredAt NOT advanced.`,
+		// debugLog(
+		// 	`FIRE attempt #${job.fireAttempts} for ${job.id} FAILED to deliver (lastDeliveryResult=${job.lastDeliveryResult}); will re-arm in place`,
 		// );
-		debugLog(
-			`FIRE attempt #${job.fireAttempts} for ${job.id} FAILED to deliver (lastDeliveryResult=${job.lastDeliveryResult}); will re-arm in place`,
-		);
 		if (job.recurring) {
 			// Re-arm without advancing lastFiredAt so the next cron match is
 			// computed from the same anchor (matching Claude Code's behavior).
@@ -668,21 +650,14 @@ function onFire(job: CronJob): void {
 		return;
 	}
 
-	// console.error(
-	// 	`[pi-loop] FIRE attempt #${job.fireAttempts} for ${job.id} delivered successfully ` +
-	// 	`(lastDeliveryResult=${job.lastDeliveryResult}).`,
+	// debugLog(
+	// 	`FIRE attempt #${job.fireAttempts} for ${job.id} delivered successfully (lastDeliveryResult=${job.lastDeliveryResult})`,
 	// );
-	debugLog(
-		`FIRE attempt #${job.fireAttempts} for ${job.id} delivered successfully (lastDeliveryResult=${job.lastDeliveryResult})`,
-	);
 
 	if (job.recurring) {
 		job.lastFiredAt = now;
 		if (job.durable) persistJobs();
 		scheduleTimer(job);
-		// console.error(
-		// 	`[pi-loop] FIRE for ${job.id} re-armed; next fire at ${job.nextRun ? new Date(job.nextRun).toISOString() : "?"}.`,
-		// );
 	} else {
 		// One-shot: delete from in-memory map and (if durable) from disk.
 		jobs.delete(job.id);
@@ -745,7 +720,6 @@ function acquireLockOrStealStale(path: string): boolean {
 			// caused by AV scanners, handle inheritance, or transient file
 			// system hiccups). The file may or may not actually exist —
 			// unlink defensively and try once more before giving up.
-			// console.error(`[pi-loop] lock acquire unexpected error:`, err);
 			try {
 				unlinkSync(path);
 			} catch {
@@ -766,12 +740,10 @@ function acquireLockOrStealStale(path: string): boolean {
 				try {
 					unlinkSync(path);
 				} catch (unlinkErr) {
-					// console.error(`[pi-loop] stale-lock unlink failed:`, unlinkErr);
 					return false;
 				}
 				const fd = openSync(path, "wx");
 				lockFd = fd;
-				// console.error(`[pi-loop] stole stale lock from crashed owner.`);
 				return true;
 			}
 		} catch (statErr) {
@@ -800,7 +772,6 @@ function refreshLock(): void {
 		const now = new Date();
 		utimesSync(lockPath, now, now);
 	} catch (err) {
-		// console.error(`[pi-loop] lock refresh failed:`, err);
 	}
 }
 
@@ -831,15 +802,12 @@ function leaderProbe(): void {
 	// Passive: try to acquire (or steal) the lock.
 	const acquired = acquireLockOrStealStale(lockPath);
 	if (!acquired) return;
-	debugLog(`probe: stole stale lock; becoming leader`);
+	// debugLog(`probe: stole stale lock; becoming leader`);
 	isLeader = true;
 	clearAllTimers();
 	jobs.clear();
 	loadJobsFromDiskAndSchedule();
-	// console.error(
-	// 	`[pi-loop] became scheduler leader via probe; armed ${jobs.size} job(s); next fire in ${formatMsUntilNextFire()}ms.`,
-	// );
-	debugLog(`probe: became leader, armed ${jobs.size} job(s); next fire in ${formatMsUntilNextFire()}ms`);
+	// debugLog(`probe: became leader, armed ${jobs.size} job(s); next fire in ${formatMsUntilNextFire()}ms`);
 }
 
 function startProbeLoop(): void {
@@ -892,7 +860,7 @@ function loadJobsFromDiskAndSchedule(): void {
 				try {
 					currentPi?.sendMessage(
 						{
-							customType: "pi-loop-notice",
+							customType: "picc-loop-notice",
 							content: `Missed one-shot task ${job.id} (was due at ${next ? new Date(next.getTime()).toLocaleString() : "N/A"}); deleting.`,
 							display: false,
 						},
@@ -908,16 +876,10 @@ function loadJobsFromDiskAndSchedule(): void {
 		scheduleTimer(job);
 		scheduled++;
 		if (job.nextRun) {
-			// console.error(
-			// 	`[pi-loop] armed job ${job.id} (${job.cron}); nextRun=${new Date(job.nextRun).toISOString()}`,
-			// );
 		}
 	}
 
-	// console.error(
-	// 	`[pi-loop] loaded ${loaded.length} task(s) from ${stateFile}; scheduled ${scheduled}, dropped ${dropped}.`,
-	// );
-	debugLog(`loaded ${loaded.length} task(s) from ${stateFile}; scheduled ${scheduled}, dropped ${dropped}`);
+	// debugLog(`loaded ${loaded.length} task(s) from ${stateFile}; scheduled ${scheduled}, dropped ${dropped}`);
 
 	if (stateFile) persistJobs(); // persist deletions of missed one-shots
 }
@@ -954,7 +916,6 @@ function loadTasksFromDisk(filePath: string): PersistedTask[] {
 			return true;
 		});
 	} catch (err) {
-		// console.error(`[pi-loop] failed to load ${filePath}, starting empty:`, err);
 		return [];
 	}
 }
@@ -971,7 +932,6 @@ function persistJobs(): void {
 	try {
 		atomicWriteJson(stateFile, { tasks: persisted });
 	} catch (err) {
-		// console.error(`[pi-loop] persist failed:`, err);
 	}
 }
 
@@ -1055,7 +1015,7 @@ const CRON_LIST_DESCRIPTION = "List scheduled cron jobs.";
 function deliverFire(job: CronJob): boolean {
 	if (!currentPi) {
 		job.lastDeliveryResult = "no-pi";
-		debugLog(`deliverFire(${job.id}): no currentPi; recording no-pi`);
+		// debugLog(`deliverFire(${job.id}): no currentPi; recording no-pi`);
 		return false;
 	}
 	// Wrap the scheduled prompt in a backtick fence one longer than the
@@ -1067,7 +1027,7 @@ function deliverFire(job: CronJob): boolean {
 	const send = (api: ExtensionAPI): void => {
 		api.sendMessage(
 			{
-				customType: "pi-loop-fire",
+				customType: "picc-loop-fire",
 				content: wrapped,
 				display: false,
 				details: {
@@ -1083,7 +1043,7 @@ function deliverFire(job: CronJob): boolean {
 	try {
 		send(currentPi);
 		job.lastDeliveryResult = "ok";
-		debugLog(`deliverFire(${job.id}): sendMessage ok (steer+triggerTurn)`);
+		// debugLog(`deliverFire(${job.id}): sendMessage ok (steer+triggerTurn)`);
 		return true;
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
@@ -1094,32 +1054,27 @@ function deliverFire(job: CronJob): boolean {
 			// recent session's api if it is still alive — this heals the common
 			// case where a subagent session_start briefly took over the binding.
 			if (lastSessionPi && lastSessionPi !== currentPi && probeAlive(lastSessionPi)) {
-				debugLog(`deliverFire(${job.id}): stale; attempting recovery via last session api`);
+				// debugLog(`deliverFire(${job.id}): stale; attempting recovery via last session api`);
 				currentPi = lastSessionPi;
 				try {
 					send(currentPi);
 					job.lastDeliveryResult = "ok";
-					debugLog(`deliverFire(${job.id}): recovered via last session api; sendMessage ok`);
+					// debugLog(`deliverFire(${job.id}): recovered via last session api; sendMessage ok`);
 					return true;
 				} catch (err2) {
 					const msg2 = err2 instanceof Error ? err2.message : String(err2);
 					job.lastDeliveryResult = "stale-ctx";
-					debugLog(`deliverFire(${job.id}): recovery failed: ${msg2}`);
+					// debugLog(`deliverFire(${job.id}): recovery failed: ${msg2}`);
 				}
 			}
 			job.lastDeliveryResult = "stale-ctx";
-			// console.error(
-			// 	`[pi-loop] extension ctx became stale (job ${job.id}); will keep re-arming in place. ` +
-			// 	`Job persists to .pi/scheduled_tasks.json.`,
-			// );
-			debugLog(`deliverFire(${job.id}): ctx stale; recording stale-ctx`);
+			// debugLog(`deliverFire(${job.id}): ctx stale; recording stale-ctx`);
 			return false;
 		}
 		// Any other error: onFire re-arms (lastFiredAt NOT advanced) so the
 		// next cron match is computed from the same anchor and we retry.
 		job.lastDeliveryResult = "error";
-		// console.error(`[pi-loop] fire delivery threw for ${job.id}:`, err);
-		debugLog(`deliverFire(${job.id}): error: ${msg}`);
+		// debugLog(`deliverFire(${job.id}): error: ${msg}`);
 		return false;
 	}
 }
@@ -1355,7 +1310,7 @@ export default function (pi: ExtensionAPI) {
 			};
 			jobs.set(id, job);
 			if (durable) persistJobs();
-			debugLog(`CronCreate: ${id} cron=${params.cron} recurring=${recurring} durable=${durable} isLeader=${isLeader}`);
+			// debugLog(`CronCreate: ${id} cron=${params.cron} recurring=${recurring} durable=${durable} isLeader=${isLeader}`);
 			// Only the scheduler leader runs timers in-process. If we are a
 			// passive peer, the job is on disk and the leader will pick it up
 			// on its next 5s probe. For durable: false (session-only) jobs,
@@ -1404,7 +1359,6 @@ export default function (pi: ExtensionAPI) {
 					try {
 						atomicWriteJson(stateFile, { tasks: remaining });
 					} catch (err) {
-						// console.error(`[pi-loop] persist failed:`, err);
 					}
 					return {
 						content: [{ type: "text", text: `Cancelled job ${params.id}.` }],
@@ -1505,9 +1459,9 @@ export default function (pi: ExtensionAPI) {
 			}
 			pi.sendMessage(
 				{
-					customType: "pi-loop-meta",
+					customType: "picc-loop-meta",
 					content: buildLoopPrompt(trimmed),
-					display: true,
+					display: false,
 				},
 				{ deliverAs: "steer", triggerTurn: true },
 			);
@@ -1531,7 +1485,7 @@ export default function (pi: ExtensionAPI) {
 
 		const isBindingSession = currentPi === undefined || currentPi === pi;
 		if (!isBindingSession) {
-			debugLog(`session_start: secondary session; scheduler state untouched (pi !== currentPi)`);
+			// debugLog(`session_start: secondary session; scheduler state untouched (pi !== currentPi)`);
 			return;
 		}
 
@@ -1548,13 +1502,13 @@ export default function (pi: ExtensionAPI) {
 
 		// Open per-session debug log. Overwritten at the start of each session
 		// so a stale log from a previous run is easy to tell apart.
-		debugLogPath = `${cwd}/.pi/pi-loop-debug.log`;
-		try {
-			writeFileSync(debugLogPath, `--- pi-loop debug log ---\n`, "utf8");
-		} catch {
-			/* best-effort */
-		}
-		debugLog(`session_start: cwd=${cwd} pid=${process.pid} (binding session)`);
+		// debugLogPath = `${cwd}/.pi/picc-loop-debug.log`;
+		// try {
+		// 	writeFileSync(debugLogPath, `--- picc-loop debug log ---\n`, "utf8");
+		// } catch {
+		// 	/* best-effort */
+		// }
+		// debugLog(`session_start: cwd=${cwd} pid=${process.pid} (binding session)`);
 
 		// Scheduler ownership is decided purely by the cross-session lock.
 		// The PI_SUBAGENT_CHILD env var is unreliable as a subagent detector
@@ -1564,21 +1518,15 @@ export default function (pi: ExtensionAPI) {
 		// stays passive; otherwise it becomes the scheduler.
 		lockPath = `${cwd}/.pi/scheduled_tasks.lock`;
 		isLeader = acquireLockOrStealStale(lockPath);
-		debugLog(
-			`session_start: PI_SUBAGENT_CHILD=${process.env.PI_SUBAGENT_CHILD ?? "<unset>"} (ignored, lock-based election); lockPath=${lockPath} isLeader=${isLeader}`,
-		);
-		debugLog(`session_start: lockPath=${lockPath} isLeader=${isLeader}`);
+		// debugLog(
+		// 	`session_start: PI_SUBAGENT_CHILD=${process.env.PI_SUBAGENT_CHILD ?? "<unset>"} (ignored, lock-based election); lockPath=${lockPath} isLeader=${isLeader}`,
+		// );
+		// debugLog(`session_start: lockPath=${lockPath} isLeader=${isLeader}`);
 		if (isLeader) {
 			loadJobsFromDiskAndSchedule();
-			debugLog(`session_start: became leader, armed ${jobs.size} job(s); next fire in ${formatMsUntilNextFire()}ms`);
-			// console.error(
-			// 	`[pi-loop] session_start: became leader, armed ${jobs.size} job(s); next fire in ${formatMsUntilNextFire()}ms.`,
-			// );
+			// debugLog(`session_start: became leader, armed ${jobs.size} job(s); next fire in ${formatMsUntilNextFire()}ms`);
 		} else {
-			debugLog(`session_start: passive peer, ${lockPath} held by another session`);
-			// console.error(
-			// 	`[pi-loop] session_start: passive peer, ${lockPath} held by another session; probe will steal if it goes stale (>${LOCK_STALENESS_THRESHOLD_MS}ms).`,
-			// );
+			// debugLog(`session_start: passive peer, ${lockPath} held by another session`);
 		}
 		// Every main session runs the probe so that any of them can take
 		// over if the current leader exits.
@@ -1605,7 +1553,7 @@ export default function (pi: ExtensionAPI) {
 		// subagent teardown (session.dispose() → shared-runtime poison) must
 		// not release the main session's lock or clear its jobs.
 		if (currentPi !== pi) {
-			debugLog(`session_shutdown: non-binding session; leaving scheduler state intact`);
+			// debugLog(`session_shutdown: non-binding session; leaving scheduler state intact`);
 			return;
 		}
 		// Durable jobs survive shutdown via the .pi/scheduled_tasks.json file.
@@ -1614,7 +1562,7 @@ export default function (pi: ExtensionAPI) {
 		// take over within 5s. If the session is still alive when the next
 		// probe fires, releaseLock() already nulled lockPath; passive peers
 		// then see a stale-or-missing lock and steal it.
-		debugLog(`session_shutdown: stopping probe, tick, clearing ${jobs.size} job(s), releasing lock`);
+		// debugLog(`session_shutdown: stopping probe, tick, clearing ${jobs.size} job(s), releasing lock`);
 		stopProbeLoop();
 		stopTickLoop();
 		clearAllTimers();
