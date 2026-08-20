@@ -12,7 +12,6 @@
  *
  * Divergences from Claude Code (single-file trade-offs):
  *   - Storage: per-project disk file at <ctx.cwd>/.pi/scheduled_tasks.json (atomic temp+rename).
- *     durable: false falls back to in-memory (session-only). 7-day recurring auto-expiry is enforced.
  *   - Leader election: one pi process per project owns the schedule at a time via
  *     <cwd>/.pi/scheduled_tasks.lock (O_EXCL). Passive peers probe every 5s and
  *     steal stale locks. Matches Claude Code's cronTasksLock design.
@@ -942,10 +941,6 @@ function persistJobs(): void {
 // ---------------------------------------------------------------------------
 
 function buildCronCreateDescription(): string {
-	return "Schedule a prompt to run at a future time — either recurring on a cron schedule, or once at a specific time. By default jobs persist across sessions in `<cwd>/.pi/scheduled_tasks.json`; pass `durable: false` for session-only jobs that die at session_shutdown. Exactly one pi process per project runs the schedule at any moment (leader-elected via `<cwd>/.pi/scheduled_tasks.lock`, 5s probe); when the owning session ends, the next running session in this cwd takes over within ~5s.";
-}
-
-function buildCronCreatePrompt(): string {
 	return `Schedule a prompt to be enqueued at a future time. Use for both recurring schedules and one-shot reminders.
 
 Uses standard 5-field cron in the user's local timezone: minute hour day-of-month month day-of-week. "0 9 * * *" means 9am local — no timezone conversion needed.
@@ -973,31 +968,23 @@ Only use minute 0 or 30 when the user names that exact time and clearly means it
 
 ## Durability
 
-Jobs persist across pi sessions in \`<cwd>/.pi/scheduled_tasks.json\` (atomic temp+rename writes). Recurring tasks auto-expire ${DEFAULT_MAX_AGE_DAYS} days after creation. Pass \`durable: false\` only when the user asks for a session-only reminder — the default is \`durable: true\`.
-
-## Cross-session wakeup (leader election)
-
-There is no OS-level scheduler, daemon, or background service. The schedule is owned by whichever pi process is currently active in this project — elected via an O_EXCL file lock at \`<cwd>/.pi/scheduled_tasks.lock\`. Every running pi session probes the lock every 5s; the holder runs the timers, passive peers wait. When the owner exits, the next session steals the (now stale) lock and resumes firing. So the schedule stays alive ONLY while at least one pi process is running in this cwd — open \`pi\` (interactive REPL) or run \`pi -p "..."\` (print mode) at least once within the job's interval. If no pi process is running and the cron interval elapses, the missed fire is skipped (recurring jobs re-anchor to "next future occurrence"; one-shots past their fire time are deleted with a notice).
+By default (durable: false) the job lives only in this Pi session — nothing is written to disk, and the job is gone when Pi exits. Pass durable: true to write to .pi/scheduled_tasks.json so the job survives restarts. Only use durable: true when the user explicitly asks for the task to persist ("keep doing this every day", "set this up permanently"). Most "remind me in 5 minutes" / "check back in an hour" requests should stay session-only.
 
 ## Runtime behavior
 
-Jobs only fire while the session is idle (not mid-query). The scheduler adds a small deterministic jitter on top of whatever you pick: recurring tasks fire up to 10% of their period late (max 15 min). Picking an off-minute is still the bigger lever.
+Jobs only fire while the REPL is idle (not mid-query). Durable jobs persist to .pi/scheduled_tasks.json and survive session restarts — on next launch they resume automatically. One-shot durable tasks that were missed while the REPL was closed are surfaced for catch-up. Session-only jobs die with the process. The scheduler adds a small deterministic jitter on top of whatever you pick: recurring tasks fire up to 10% of their period late (max 15 min); one-shot tasks landing on :00 or :30 fire up to 90 s early. Picking an off-minute is still the bigger lever.
 
-Recurring tasks auto-expire after ${DEFAULT_MAX_AGE_DAYS} days from creation — they fire one final time, then are deleted. This bounds session lifetime. Tell the user about the ${DEFAULT_MAX_AGE_DAYS}-day limit when scheduling recurring jobs.
+Recurring tasks auto-expire after ${DEFAULT_MAX_AGE_DAYS} days — they fire one final time, then are deleted. This bounds session lifetime. Tell the user about the ${DEFAULT_MAX_AGE_DAYS}-day limit when scheduling recurring jobs.
 
 Returns a job ID you can pass to ${TOOL_CRON_DELETE}.`;
-}
-
-function buildCronDeletePrompt(): string {
-	return `Cancel a cron job previously scheduled with ${TOOL_CRON_CREATE}. Removes it from the per-project \`<cwd>/.pi/scheduled_tasks.json\` file (if durable) and from the in-memory session store.`;
 }
 
 function buildCronListPrompt(): string {
 	return `List all cron jobs scheduled via ${TOOL_CRON_CREATE} for this project — durable jobs (loaded from \`<cwd>/.pi/scheduled_tasks.json\`) plus any session-only jobs added this session.`;
 }
 
-const CRON_DELETE_DESCRIPTION = "Cancel a scheduled cron job by ID.";
-const CRON_LIST_DESCRIPTION = "List scheduled cron jobs.";
+const CRON_DELETE_DESCRIPTION = "Cancel a cron job previously scheduled with CronCreate. Removes it from .pi/scheduled_tasks.json (durable jobs) or the in-memory session store (session-only jobs).";
+const CRON_LIST_DESCRIPTION = "List all cron jobs scheduled via CronCreate, both durable (.pi/scheduled_tasks.json) and session-only.";
 
 // ---------------------------------------------------------------------------
 // §9 Fire-delivery helper
@@ -1244,35 +1231,27 @@ export default function (pi: ExtensionAPI) {
 		label: "CronCreate",
 		description: buildCronCreateDescription(),
 		promptSnippet:
-			"Schedule a prompt to run at a future time (recurring on cron, or one-shot). Jobs persist across sessions in `.pi/scheduled_tasks.json` unless `durable: false` is passed. Exactly one pi process per project runs the schedule at a time (leader-elected via `.pi/scheduled_tasks.lock`).",
-		promptGuidelines: [
-			"Use CronCreate to schedule recurring or one-shot prompts at a future time.",
-			'Cron uses 5-field syntax in the local timezone: minute hour day-of-month month day-of-week (e.g. "*/5 * * * *" = every 5 min).',
-			"Avoid minute 0 and 30 in cron expressions when the user's request is approximate — pick an off-minute to spread fleet load.",
-			'Set recurring: false for one-shot reminders ("remind me at 2:30pm to X").',
-			"By default `durable: true` persists the job across sessions in `.pi/scheduled_tasks.json`. Pass `durable: false` only for session-only jobs that should die at session end.",
-			`Recurring jobs auto-expire after ${DEFAULT_MAX_AGE_DAYS} days from creation — they fire one last time then are deleted. This is now a real bound (not just a session-lifetime ceiling). Tell the user about this when scheduling.`,
-			"Cross-session wakeup is NOT autonomous: a running pi process in this cwd is required to fire jobs (leader-elected via `.pi/scheduled_tasks.lock`; 5s probe; passive peers steal stale locks). When no pi process is running, fires are skipped. Tell the user this when they expect unattended scheduling.",
-		],
+			"Schedule a prompt to be enqueued at a future time.",
+		promptGuidelines: [],
 		parameters: Type.Object({
 			cron: Type.String({
 				description:
 					'Standard 5-field cron expression in local time: "M H DoM Mon DoW" (e.g. "*/5 * * * *" = every 5 minutes, "30 14 28 2 *" = Feb 28 at 2:30pm local once).',
 			}),
+            durable: Type.Optional(
+                Type.Boolean({
+                    default: false,
+                    description:
+                        "true = persist to .claude/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this Claude session ends. Use true only when the user asks the task to survive across sessions.",
+                }),
+            ),
 			prompt: Type.String({
 				description: "The prompt to enqueue at each fire time.",
 			}),
 			recurring: Type.Optional(
 				Type.Boolean({
 					default: true,
-					description: `true (default) = fire on every cron match until deleted or auto-expired after ${DEFAULT_MAX_AGE_DAYS} days. false = fire once at the next match, then auto-delete.`,
-				}),
-			),
-			durable: Type.Optional(
-				Type.Boolean({
-					default: true,
-					description:
-						"true (default) = persist across restarts in `<cwd>/.pi/scheduled_tasks.json`. false = session-only, dies at session_shutdown.",
+					description: `true (default) = fire on every cron match until deleted or auto-expired after 7 days. false = fire once at the next match, then auto-delete. Use false for \"remind me at X\" one-shot requests with pinned minute/hour/dom/month.`,
 				}),
 			),
 		}),
@@ -1337,10 +1316,8 @@ export default function (pi: ExtensionAPI) {
 		name: TOOL_CRON_DELETE,
 		label: "CronDelete",
 		description: CRON_DELETE_DESCRIPTION,
-		promptSnippet: "Cancel a scheduled cron job by ID.",
-		promptGuidelines: [
-			`Use ${TOOL_CRON_DELETE} to cancel a job previously scheduled with ${TOOL_CRON_CREATE}.`,
-		],
+		promptSnippet: "Cancel a cron job previously scheduled with CronCreate.",
+		promptGuidelines: [],
 		parameters: Type.Object({
 			id: Type.String({ description: "Job ID returned by CronCreate." }),
 		}),
@@ -1386,10 +1363,8 @@ export default function (pi: ExtensionAPI) {
 		name: TOOL_CRON_LIST,
 		label: "CronList",
 		description: CRON_LIST_DESCRIPTION,
-		promptSnippet: "List scheduled cron jobs.",
-		promptGuidelines: [
-			`Use ${TOOL_CRON_LIST} to enumerate active cron jobs in this session.`,
-		],
+		promptSnippet: "List all cron jobs scheduled via CronCreate.",
+		promptGuidelines: [],
 		parameters: Type.Object({}),
 		async execute() {
 			// If in-memory map is empty but we have a state file, check disk for
