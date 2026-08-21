@@ -1,7 +1,7 @@
 {
   "name": "@ladbabynpm/picc-loop",
   "version": "0.1.0",
-  "description": "Claude Code style cron-based scheduling for pi: /loop command and CronCreate/CronDelete/CronList tools.",
+  "description": "Claude Code style cron-based scheduling for pi. Fork of trevonistrevon/pi-loop, better aligned with the harness of Claude Code.",
   "type": "module",
   "license": "MIT",
   "author": "ladbabynpm",
