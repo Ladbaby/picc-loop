@@ -1,7 +1,7 @@
 {
   "name": "@ladbabynpm/picc-loop",
   "version": "0.1.0",
-  "description": "Cron-based scheduling for pi: CronCreate/CronDelete/CronList tools + /loop command with cross-session leader election.",
+  "description": "Claude Code style cron-based scheduling for pi: /loop command and CronCreate/CronDelete/CronList tools.",
   "type": "module",
   "license": "MIT",
   "author": "ladbabynpm",
