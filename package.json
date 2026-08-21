@@ -4,12 +4,38 @@
   "description": "Cron-based scheduling for pi: CronCreate/CronDelete/CronList tools + /loop command with cross-session leader election.",
   "type": "module",
   "license": "MIT",
-  "keywords": ["pi", "pi-package", "pi-extension", "cron", "scheduling", "loop"],
-  "files": ["index.ts", "README.md"],
-  "pi": { "extensions": ["./index.ts"] },
+  "author": "ladbabynpm",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ladbaby/picc-loop.git"
+  },
+  "homepage": "https://github.com/Ladbaby/picc-loop",
+  "bugs": {
+    "url": "https://github.com/Ladbaby/picc-loop/issues"
+  },
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-extension",
+    "cron",
+    "scheduling",
+    "loop"
+  ],
+  "files": [
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
   },
-  "publishConfig": { "access": "public" }
+  "publishConfig": {
+    "access": "public"
+  }
 }
